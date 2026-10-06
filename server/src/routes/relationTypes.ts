@@ -11,11 +11,11 @@ const RelationTypeInputSchema = z.object({
   directionality: z.enum(["directed", "undirected"]).default("directed"),
 });
 
-relationTypesRouter.get("/", (_req, res) => {
-  res.json(listRelationTypes());
+relationTypesRouter.get("/", async (_req, res) => {
+  res.json(await listRelationTypes());
 });
 
-relationTypesRouter.post("/", (req, res) => {
+relationTypesRouter.post("/", async (req, res) => {
   const input = RelationTypeInputSchema.parse(req.body);
-  res.status(201).json(createRelationType(input));
+  res.status(201).json(await createRelationType(input));
 });

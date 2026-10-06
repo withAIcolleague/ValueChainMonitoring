@@ -12,7 +12,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
     "@valuechain/shared": "*",
-    "better-sqlite3": "^12.2.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "express": "^5.0.1",
@@ -20,7 +19,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",

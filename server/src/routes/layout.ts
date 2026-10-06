@@ -5,12 +5,12 @@ import { getLayoutMeta, upsertLayoutPositions } from "../services/layoutService.
 
 export const layoutRouter = Router();
 
-layoutRouter.put("/positions", (req, res) => {
+layoutRouter.put("/positions", async (req, res) => {
   const positions = z.array(LayoutPositionSchema).parse(req.body);
-  upsertLayoutPositions(positions);
-  res.json({ updated: positions.length });
+  const updated = await upsertLayoutPositions(positions);
+  res.json({ updated });
 });
 
-layoutRouter.get("/meta", (_req, res) => {
-  res.json(getLayoutMeta() ?? null);
+layoutRouter.get("/meta", async (_req, res) => {
+  res.json((await getLayoutMeta()) ?? null);
 });

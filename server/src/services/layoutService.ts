@@ -1,67 +1,99 @@
-import { db } from "../db/connection.js";
+import { supabase } from "../db/supabaseClient.js";
 import type { LayoutPosition } from "@valuechain/shared";
+import { HttpError } from "../middleware/errorHandler.js";
 
 /** Assigns a cheap circular placement to any stock lacking cached coordinates,
  * so /api/graph never has to wait on a force-layout computation. */
-export function ensureLayoutForAllNodes(): void {
-  const rows = db
-    .prepare("SELECT id FROM stocks WHERE pos_x IS NULL OR pos_y IS NULL ORDER BY id")
-    .all() as { id: number }[];
-  if (rows.length === 0) return;
+export async function ensureLayoutForAllNodes(): Promise<void> {
+  const { data: rows, error } = await supabase
+    .from("stocks")
+    .select("id")
+    .or("pos_x.is.null,pos_y.is.null")
+    .order("id");
+  if (error) throw new HttpError(500, error.message);
+  if (!rows || rows.length === 0) return;
 
-  const totalRow = db.prepare("SELECT COUNT(*) as c FROM stocks").get() as { c: number };
-  const total = totalRow.c || 1;
+  const { count, error: countError } = await supabase
+    .from("stocks")
+    .select("*", { count: "exact", head: true });
+  if (countError) throw new HttpError(500, countError.message);
+
+  const total = count || 1;
   const radius = Math.max(200, Math.sqrt(total) * 60);
 
-  const update = db.prepare("UPDATE stocks SET pos_x = ?, pos_y = ? WHERE id = ?");
-  const tx = db.transaction((items: { id: number }[]) => {
-    items.forEach((row, idx) => {
-      const angle = (2 * Math.PI * idx) / items.length;
-      update.run(radius * Math.cos(angle), radius * Math.sin(angle), row.id);
-    });
+  const updates = rows.map((row: { id: number }, idx: number) => {
+    const angle = (2 * Math.PI * idx) / rows.length;
+    return { id: row.id, x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
   });
-  tx(rows);
+
+  const { error: rpcError } = await supabase.schema("valuechain").rpc("bulk_update_positions", { updates });
+  if (rpcError) throw new HttpError(500, rpcError.message);
 }
 
-/** Bulk upsert of client-computed ForceAtlas2 coordinates in a single transaction. */
-export function upsertLayoutPositions(positions: LayoutPosition[]): void {
-  const update = db.prepare(
-    "UPDATE stocks SET pos_x = @x, pos_y = @y WHERE id = @stockId AND layout_pinned = 0",
-  );
-  const tx = db.transaction((items: LayoutPosition[]) => {
-    for (const p of items) update.run(p);
-    db.prepare(
-      `INSERT INTO layout_meta (id, algorithm, last_computed_at) VALUES (1, 'forceatlas2', datetime('now'))
-       ON CONFLICT(id) DO UPDATE SET algorithm = excluded.algorithm, last_computed_at = excluded.last_computed_at`,
-    ).run();
+/** Bulk-saves client-computed ForceAtlas2 coordinates via a Postgres function rather than
+ * upsert: upsert's generated INSERT branch would fail Postgres's NOT NULL checks on columns
+ * (ticker, name, ...) that a position-only payload never provides, even though the row always
+ * exists and only the UPDATE branch ever actually runs. A plain SQL UPDATE has no such
+ * constraint and also lets `layout_pinned` be enforced server-side instead of via a pre-filter. */
+export async function upsertLayoutPositions(positions: LayoutPosition[]): Promise<number> {
+  if (positions.length === 0) return 0;
+
+  const { error } = await supabase.schema("valuechain").rpc("bulk_update_positions", {
+    updates: positions.map((p) => ({ id: p.stockId, x: p.x, y: p.y })),
   });
-  tx(positions);
+  if (error) throw new HttpError(500, error.message);
+
+  const { error: metaError } = await supabase
+    .from("layout_meta")
+    .upsert({ id: 1, algorithm: "forceatlas2", last_computed_at: new Date().toISOString() }, { onConflict: "id" });
+  if (metaError) throw new HttpError(500, metaError.message);
+
+  return positions.length;
 }
 
 /** O(1) placement for a newly added stock: average of its already-positioned neighbors. */
-export function placeNearNeighbors(stockId: number): void {
-  const neighbors = db
-    .prepare(
-      `SELECT s.pos_x as pos_x, s.pos_y as pos_y FROM relations r
-       JOIN stocks s ON s.id = CASE WHEN r.source_stock_id = @id THEN r.target_stock_id ELSE r.source_stock_id END
-       WHERE (r.source_stock_id = @id OR r.target_stock_id = @id) AND s.pos_x IS NOT NULL`,
-    )
-    .all({ id: stockId }) as { pos_x: number; pos_y: number }[];
+export async function placeNearNeighbors(stockId: number): Promise<void> {
+  const { data: relRows, error: relError } = await supabase
+    .from("relations")
+    .select("source_stock_id, target_stock_id")
+    .or(`source_stock_id.eq.${stockId},target_stock_id.eq.${stockId}`);
+  if (relError) throw new HttpError(500, relError.message);
+  if (!relRows || relRows.length === 0) return;
 
-  if (neighbors.length === 0) return;
-
-  const avgX = neighbors.reduce((sum, n) => sum + n.pos_x, 0) / neighbors.length;
-  const avgY = neighbors.reduce((sum, n) => sum + n.pos_y, 0) / neighbors.length;
-  const jitter = 40;
-  db.prepare("UPDATE stocks SET pos_x = ?, pos_y = ? WHERE id = ? AND layout_pinned = 0").run(
-    avgX + (Math.random() - 0.5) * jitter,
-    avgY + (Math.random() - 0.5) * jitter,
-    stockId,
+  const neighborIds = Array.from(
+    new Set(
+      relRows.map((r: { source_stock_id: number; target_stock_id: number }) =>
+        r.source_stock_id === stockId ? r.target_stock_id : r.source_stock_id,
+      ),
+    ),
   );
+  if (neighborIds.length === 0) return;
+
+  const { data: neighborStocks, error: stockError } = await supabase
+    .from("stocks")
+    .select("pos_x, pos_y")
+    .in("id", neighborIds)
+    .not("pos_x", "is", null);
+  if (stockError) throw new HttpError(500, stockError.message);
+  if (!neighborStocks || neighborStocks.length === 0) return;
+
+  const avgX = neighborStocks.reduce((sum: number, n: { pos_x: number }) => sum + n.pos_x, 0) / neighborStocks.length;
+  const avgY = neighborStocks.reduce((sum: number, n: { pos_y: number }) => sum + n.pos_y, 0) / neighborStocks.length;
+  const jitter = 40;
+
+  const { error: updateError } = await supabase
+    .from("stocks")
+    .update({
+      pos_x: avgX + (Math.random() - 0.5) * jitter,
+      pos_y: avgY + (Math.random() - 0.5) * jitter,
+    })
+    .eq("id", stockId)
+    .eq("layout_pinned", 0);
+  if (updateError) throw new HttpError(500, updateError.message);
 }
 
-export function getLayoutMeta() {
-  return db.prepare("SELECT * FROM layout_meta WHERE id = 1").get() as
-    | { algorithm: string; last_computed_at: string }
-    | undefined;
+export async function getLayoutMeta(): Promise<{ algorithm: string; last_computed_at: string } | undefined> {
+  const { data, error } = await supabase.from("layout_meta").select("*").eq("id", 1).maybeSingle();
+  if (error) throw new HttpError(500, error.message);
+  return data ?? undefined;
 }

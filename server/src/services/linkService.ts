@@ -1,5 +1,6 @@
-import { db } from "../db/connection.js";
+import { supabase } from "../db/supabaseClient.js";
 import type { StockLink, StockLinkInput } from "@valuechain/shared";
+import { HttpError } from "../middleware/errorHandler.js";
 
 interface StockLinkRow {
   id: number;
@@ -13,21 +14,23 @@ function toStockLink(row: StockLinkRow): StockLink {
   return { id: row.id, stockId: row.stock_id, label: row.label, url: row.url, createdAt: row.created_at };
 }
 
-export function listStockLinks(stockId: number): StockLink[] {
-  const rows = db
-    .prepare("SELECT * FROM stock_links WHERE stock_id = ? ORDER BY id")
-    .all(stockId) as StockLinkRow[];
-  return rows.map(toStockLink);
+export async function listStockLinks(stockId: number): Promise<StockLink[]> {
+  const { data, error } = await supabase.from("stock_links").select("*").eq("stock_id", stockId).order("id");
+  if (error) throw new HttpError(500, error.message);
+  return (data as StockLinkRow[]).map(toStockLink);
 }
 
-export function addStockLink(stockId: number, input: StockLinkInput): StockLink {
-  const result = db
-    .prepare("INSERT INTO stock_links (stock_id, label, url) VALUES (@stockId, @label, @url)")
-    .run({ stockId, label: input.label, url: input.url });
-  const row = db.prepare("SELECT * FROM stock_links WHERE id = ?").get(result.lastInsertRowid) as StockLinkRow;
-  return toStockLink(row);
+export async function addStockLink(stockId: number, input: StockLinkInput): Promise<StockLink> {
+  const { data, error } = await supabase
+    .from("stock_links")
+    .insert({ stock_id: stockId, label: input.label, url: input.url })
+    .select()
+    .single();
+  if (error) throw new HttpError(500, error.message);
+  return toStockLink(data as StockLinkRow);
 }
 
-export function removeStockLink(stockId: number, linkId: number): void {
-  db.prepare("DELETE FROM stock_links WHERE id = ? AND stock_id = ?").run(linkId, stockId);
+export async function removeStockLink(stockId: number, linkId: number): Promise<void> {
+  const { error } = await supabase.from("stock_links").delete().eq("id", linkId).eq("stock_id", stockId);
+  if (error) throw new HttpError(500, error.message);
 }

@@ -1,4 +1,5 @@
-import { db } from "../db/connection.js";
+import { supabase } from "../db/supabaseClient.js";
+import { fetchAllRows } from "../db/paginate.js";
 import type { News, NewsCategory, NewsInput } from "@valuechain/shared";
 import { HttpError } from "../middleware/errorHandler.js";
 
@@ -30,99 +31,98 @@ function toNews(row: NewsRow): News {
   };
 }
 
-export function listNews(params: { stockId?: number; category?: NewsCategory; from?: string; to?: string }): News[] {
-  const conditions: string[] = [];
-  const args: Record<string, unknown> = {};
+export async function listNews(params: { stockId?: number; category?: NewsCategory; from?: string; to?: string }): Promise<News[]> {
+  let q = supabase.from("news").select("*");
 
-  if (params.stockId) {
-    conditions.push("stock_id = @stockId");
-    args.stockId = params.stockId;
-  }
-  if (params.category) {
-    conditions.push("category = @category");
-    args.category = params.category;
-  }
-  if (params.from) {
-    conditions.push("published_at >= @from");
-    args.from = params.from;
-  }
-  if (params.to) {
-    conditions.push("published_at <= @to");
-    args.to = params.to;
-  }
+  if (params.stockId) q = q.eq("stock_id", params.stockId);
+  if (params.category) q = q.eq("category", params.category);
+  if (params.from) q = q.gte("published_at", params.from);
+  if (params.to) q = q.lte("published_at", params.to);
 
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = db
-    .prepare(`SELECT * FROM news ${where} ORDER BY published_at DESC, id DESC LIMIT 500`)
-    .all(args) as NewsRow[];
-  return rows.map(toNews);
+  q = q.order("published_at", { ascending: false }).order("id", { ascending: false }).limit(500);
+
+  const { data, error } = await q;
+  if (error) throw new HttpError(500, error.message);
+  return (data as NewsRow[]).map(toNews);
 }
 
-export function addManualNews(stockId: number, input: NewsInput): News {
-  const result = db
-    .prepare(
-      `INSERT INTO news (stock_id, title, url, source, published_at, category, origin, is_confirmed)
-       VALUES (@stockId, @title, @url, @source, @publishedAt, @category, 'MANUAL', 1)
-       ON CONFLICT(stock_id, url) DO UPDATE SET
-         title=excluded.title, source=excluded.source, published_at=excluded.published_at,
-         category=excluded.category, origin='MANUAL', is_confirmed=1`,
+export async function addManualNews(stockId: number, input: NewsInput): Promise<News> {
+  const { data, error } = await supabase
+    .from("news")
+    .upsert(
+      {
+        stock_id: stockId,
+        title: input.title,
+        url: input.url,
+        source: input.source ?? null,
+        published_at: input.publishedAt ?? null,
+        category: input.category,
+        origin: "MANUAL",
+        is_confirmed: 1,
+      },
+      { onConflict: "stock_id,url" },
     )
-    .run({
-      stockId,
-      title: input.title,
-      url: input.url,
-      source: input.source ?? null,
-      publishedAt: input.publishedAt ?? null,
-      category: input.category,
-    });
-  const id = result.lastInsertRowid
-    ? Number(result.lastInsertRowid)
-    : (db.prepare("SELECT id FROM news WHERE stock_id=? AND url=?").get(stockId, input.url) as { id: number }).id;
-  const row = db.prepare("SELECT * FROM news WHERE id = ?").get(id) as NewsRow;
-  return toNews(row);
+    .select()
+    .single();
+  if (error) throw new HttpError(500, error.message);
+  return toNews(data as NewsRow);
 }
 
-export function upsertAutoNews(stockId: number, item: { title: string; url: string; source?: string | null; publishedAt?: string | null; category: NewsCategory }): void {
-  db.prepare(
-    `INSERT INTO news (stock_id, title, url, source, published_at, category, origin, is_confirmed)
-     VALUES (@stockId, @title, @url, @source, @publishedAt, @category, 'AUTO', 0)
-     ON CONFLICT(stock_id, url) DO NOTHING`,
-  ).run({
-    stockId,
-    title: item.title,
-    url: item.url,
-    source: item.source ?? null,
-    publishedAt: item.publishedAt ?? null,
-    category: item.category,
-  });
+export async function upsertAutoNews(
+  stockId: number,
+  item: { title: string; url: string; source?: string | null; publishedAt?: string | null; category: NewsCategory },
+): Promise<void> {
+  const { error } = await supabase.from("news").upsert(
+    {
+      stock_id: stockId,
+      title: item.title,
+      url: item.url,
+      source: item.source ?? null,
+      published_at: item.publishedAt ?? null,
+      category: item.category,
+      origin: "AUTO",
+      is_confirmed: 0,
+    },
+    { onConflict: "stock_id,url", ignoreDuplicates: true },
+  );
+  if (error) throw new HttpError(500, error.message);
 }
 
-export function updateNews(id: number, input: { category?: NewsCategory; isConfirmed?: boolean }): News {
-  const existing = db.prepare("SELECT * FROM news WHERE id = ?").get(id) as NewsRow | undefined;
+export async function updateNews(id: number, input: { category?: NewsCategory; isConfirmed?: boolean }): Promise<News> {
+  const { data: existing, error: fetchError } = await supabase.from("news").select("*").eq("id", id).maybeSingle();
+  if (fetchError) throw new HttpError(500, fetchError.message);
   if (!existing) throw new HttpError(404, "news not found");
-  db.prepare(
-    "UPDATE news SET category = @category, is_confirmed = @isConfirmed WHERE id = @id",
-  ).run({
-    id,
-    category: input.category ?? existing.category,
-    isConfirmed: input.isConfirmed === undefined ? existing.is_confirmed : input.isConfirmed ? 1 : 0,
-  });
-  const row = db.prepare("SELECT * FROM news WHERE id = ?").get(id) as NewsRow;
-  return toNews(row);
+
+  const existingRow = existing as NewsRow;
+  const { data, error } = await supabase
+    .from("news")
+    .update({
+      category: input.category ?? existingRow.category,
+      is_confirmed: input.isConfirmed === undefined ? existingRow.is_confirmed : input.isConfirmed ? 1 : 0,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new HttpError(500, error.message);
+  return toNews(data as NewsRow);
 }
 
-export function deleteNews(id: number): void {
-  db.prepare("DELETE FROM news WHERE id = ?").run(id);
+export async function deleteNews(id: number): Promise<void> {
+  const { error } = await supabase.from("news").delete().eq("id", id);
+  if (error) throw new HttpError(500, error.message);
 }
 
-export function latestNewsCategoryByStock(withinDays = 7): Map<number, NewsCategory> {
-  const rows = db
-    .prepare(
-      `SELECT stock_id, category FROM news
-       WHERE published_at >= datetime('now', @since) AND category != 'OTHER'
-       ORDER BY published_at DESC`,
-    )
-    .all({ since: `-${withinDays} days` }) as { stock_id: number; category: NewsCategory }[];
+export async function latestNewsCategoryByStock(withinDays = 7): Promise<Map<number, NewsCategory>> {
+  const since = new Date(Date.now() - withinDays * 24 * 60 * 60 * 1000).toISOString();
+  const rows = await fetchAllRows<{ stock_id: number; category: NewsCategory }>((from, to) =>
+    supabase
+      .from("news")
+      .select("stock_id, category")
+      .gte("published_at", since)
+      .neq("category", "OTHER")
+      .order("published_at", { ascending: false })
+      .range(from, to),
+  );
 
   const map = new Map<number, NewsCategory>();
   for (const row of rows) {

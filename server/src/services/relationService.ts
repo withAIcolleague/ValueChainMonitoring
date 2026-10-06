@@ -1,4 +1,4 @@
-import { db } from "../db/connection.js";
+import { supabase } from "../db/supabaseClient.js";
 import type { Relation, RelationInput, RelationTypeDef } from "@valuechain/shared";
 import { HttpError } from "../middleware/errorHandler.js";
 
@@ -28,82 +28,75 @@ function toRelation(row: RelationRow): Relation {
   };
 }
 
-export function listRelations(params: { stockId?: number; relationTypeId?: number; productId?: number }): Relation[] {
-  const conditions: string[] = [];
-  const args: Record<string, unknown> = {};
+export async function listRelations(params: { stockId?: number; relationTypeId?: number; productId?: number }): Promise<Relation[]> {
+  let q = supabase.from("relations").select("*");
 
   if (params.stockId) {
-    conditions.push("(source_stock_id = @stockId OR target_stock_id = @stockId)");
-    args.stockId = params.stockId;
+    q = q.or(`source_stock_id.eq.${params.stockId},target_stock_id.eq.${params.stockId}`);
   }
-  if (params.relationTypeId) {
-    conditions.push("relation_type_id = @relationTypeId");
-    args.relationTypeId = params.relationTypeId;
-  }
-  if (params.productId) {
-    conditions.push("product_id = @productId");
-    args.productId = params.productId;
-  }
+  if (params.relationTypeId) q = q.eq("relation_type_id", params.relationTypeId);
+  if (params.productId) q = q.eq("product_id", params.productId);
 
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = db.prepare(`SELECT * FROM relations ${where}`).all(args) as RelationRow[];
-  return rows.map(toRelation);
+  const { data, error } = await q;
+  if (error) throw new HttpError(500, error.message);
+  return (data as RelationRow[]).map(toRelation);
 }
 
-export function getRelation(id: number): Relation {
-  const row = db.prepare("SELECT * FROM relations WHERE id = ?").get(id) as RelationRow | undefined;
-  if (!row) throw new HttpError(404, "relation not found");
-  return toRelation(row);
+export async function getRelation(id: number): Promise<Relation> {
+  const { data, error } = await supabase.from("relations").select("*").eq("id", id).maybeSingle();
+  if (error) throw new HttpError(500, error.message);
+  if (!data) throw new HttpError(404, "relation not found");
+  return toRelation(data as RelationRow);
 }
 
-export function createRelation(input: RelationInput): Relation {
+export async function createRelation(input: RelationInput): Promise<Relation> {
   if (input.sourceStockId === input.targetStockId) {
     throw new HttpError(400, "source and target must differ");
   }
-  const result = db
-    .prepare(
-      `INSERT INTO relations
-        (source_stock_id, target_stock_id, relation_type_id, product_id, revenue_dependency_pct, weight, description, last_confirmed_at)
-       VALUES (@sourceStockId, @targetStockId, @relationTypeId, @productId, @revenueDependencyPct, @weight, @description, @lastConfirmedAt)`,
-    )
-    .run({
-      sourceStockId: input.sourceStockId,
-      targetStockId: input.targetStockId,
-      relationTypeId: input.relationTypeId,
-      productId: input.productId ?? null,
-      revenueDependencyPct: input.revenueDependencyPct ?? null,
+  const { data, error } = await supabase
+    .from("relations")
+    .insert({
+      source_stock_id: input.sourceStockId,
+      target_stock_id: input.targetStockId,
+      relation_type_id: input.relationTypeId,
+      product_id: input.productId ?? null,
+      revenue_dependency_pct: input.revenueDependencyPct ?? null,
       weight: input.weight ?? 1,
       description: input.description ?? null,
-      lastConfirmedAt: input.lastConfirmedAt ?? null,
-    });
-  return getRelation(Number(result.lastInsertRowid));
+      last_confirmed_at: input.lastConfirmedAt ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  return toRelation(data as RelationRow);
 }
 
-export function updateRelation(id: number, input: Partial<RelationInput>): Relation {
-  const existing = getRelation(id);
+export async function updateRelation(id: number, input: Partial<RelationInput>): Promise<Relation> {
+  const existing = await getRelation(id);
   const merged = { ...existing, ...input };
-  db.prepare(
-    `UPDATE relations SET
-       source_stock_id=@sourceStockId, target_stock_id=@targetStockId, relation_type_id=@relationTypeId,
-       product_id=@productId, revenue_dependency_pct=@revenueDependencyPct, weight=@weight,
-       description=@description, last_confirmed_at=@lastConfirmedAt, updated_at=datetime('now')
-     WHERE id=@id`,
-  ).run({
-    id,
-    sourceStockId: merged.sourceStockId,
-    targetStockId: merged.targetStockId,
-    relationTypeId: merged.relationTypeId,
-    productId: merged.productId ?? null,
-    revenueDependencyPct: merged.revenueDependencyPct ?? null,
-    weight: merged.weight,
-    description: merged.description ?? null,
-    lastConfirmedAt: merged.lastConfirmedAt ?? null,
-  });
-  return getRelation(id);
+  const { data, error } = await supabase
+    .from("relations")
+    .update({
+      source_stock_id: merged.sourceStockId,
+      target_stock_id: merged.targetStockId,
+      relation_type_id: merged.relationTypeId,
+      product_id: merged.productId ?? null,
+      revenue_dependency_pct: merged.revenueDependencyPct ?? null,
+      weight: merged.weight,
+      description: merged.description ?? null,
+      last_confirmed_at: merged.lastConfirmedAt ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new HttpError(500, error.message);
+  return toRelation(data as RelationRow);
 }
 
-export function deleteRelation(id: number): void {
-  db.prepare("DELETE FROM relations WHERE id = ?").run(id);
+export async function deleteRelation(id: number): Promise<void> {
+  const { error } = await supabase.from("relations").delete().eq("id", id);
+  if (error) throw new HttpError(500, error.message);
 }
 
 interface RelationTypeRow {
@@ -118,17 +111,18 @@ function toRelationType(row: RelationTypeRow): RelationTypeDef {
   return { id: row.id, code: row.code, labelKo: row.label_ko, color: row.color, directionality: row.directionality };
 }
 
-export function listRelationTypes(): RelationTypeDef[] {
-  const rows = db.prepare("SELECT * FROM relation_types ORDER BY id").all() as RelationTypeRow[];
-  return rows.map(toRelationType);
+export async function listRelationTypes(): Promise<RelationTypeDef[]> {
+  const { data, error } = await supabase.from("relation_types").select("*").order("id");
+  if (error) throw new HttpError(500, error.message);
+  return (data as RelationTypeRow[]).map(toRelationType);
 }
 
-export function createRelationType(input: { code: string; labelKo: string; color: string; directionality: "directed" | "undirected" }): RelationTypeDef {
-  const result = db
-    .prepare(
-      "INSERT INTO relation_types (code, label_ko, color, directionality) VALUES (@code, @labelKo, @color, @directionality)",
-    )
-    .run(input);
-  const row = db.prepare("SELECT * FROM relation_types WHERE id = ?").get(result.lastInsertRowid) as RelationTypeRow;
-  return toRelationType(row);
+export async function createRelationType(input: { code: string; labelKo: string; color: string; directionality: "directed" | "undirected" }): Promise<RelationTypeDef> {
+  const { data, error } = await supabase
+    .from("relation_types")
+    .insert({ code: input.code, label_ko: input.labelKo, color: input.color, directionality: input.directionality })
+    .select()
+    .single();
+  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  return toRelationType(data as RelationTypeRow);
 }

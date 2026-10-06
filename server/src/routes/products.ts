@@ -11,27 +11,27 @@ import { paramNumber } from "../middleware/validate.js";
 
 export const productsRouter = Router();
 
-productsRouter.get("/", (_req, res) => {
-  res.json(listProducts());
+productsRouter.get("/", async (_req, res) => {
+  res.json(await listProducts());
 });
 
-productsRouter.post("/", (req, res) => {
+productsRouter.post("/", async (req, res) => {
   const input = ProductInputSchema.parse(req.body);
-  res.status(201).json(createProduct(input));
+  res.status(201).json(await createProduct(input));
 });
 
 export const stockProductsRouter = Router({ mergeParams: true });
 
-stockProductsRouter.get("/", (req, res) => {
-  res.json(listStockProducts(paramNumber(req, "id")));
+stockProductsRouter.get("/", async (req, res) => {
+  res.json(await listStockProducts(paramNumber(req, "id")));
 });
 
-stockProductsRouter.post("/", (req, res) => {
+stockProductsRouter.post("/", async (req, res) => {
   const input = StockProductInputSchema.parse(req.body);
-  res.status(201).json(addStockProduct(paramNumber(req, "id"), input));
+  res.status(201).json(await addStockProduct(paramNumber(req, "id"), input));
 });
 
-stockProductsRouter.delete("/:productId/:businessType", (req, res) => {
-  removeStockProduct(paramNumber(req, "id"), paramNumber(req, "productId"), req.params.businessType);
+stockProductsRouter.delete("/:productId/:businessType", async (req, res) => {
+  await removeStockProduct(paramNumber(req, "id"), paramNumber(req, "productId"), req.params.businessType);
   res.status(204).end();
 });

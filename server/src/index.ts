@@ -1,4 +1,4 @@
-import "./db/connection.js";
+import "./db/supabaseClient.js";
 import express from "express";
 import cors from "cors";
 import compression from "compression";

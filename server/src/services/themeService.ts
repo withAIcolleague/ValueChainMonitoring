@@ -1,5 +1,6 @@
-import { db } from "../db/connection.js";
+import { supabase } from "../db/supabaseClient.js";
 import type { Theme, ThemeInput } from "@valuechain/shared";
+import { HttpError } from "../middleware/errorHandler.js";
 
 interface ThemeRow {
   id: number;
@@ -11,32 +12,36 @@ function toTheme(row: ThemeRow): Theme {
   return { id: row.id, name: row.name, color: row.color };
 }
 
-export function listThemes(): Theme[] {
-  const rows = db.prepare("SELECT * FROM themes ORDER BY name").all() as ThemeRow[];
-  return rows.map(toTheme);
+export async function listThemes(): Promise<Theme[]> {
+  const { data, error } = await supabase.from("themes").select("*").order("name");
+  if (error) throw new HttpError(500, error.message);
+  return (data as ThemeRow[]).map(toTheme);
 }
 
-export function createTheme(input: ThemeInput): Theme {
-  const result = db
-    .prepare("INSERT INTO themes (name, color) VALUES (@name, @color)")
-    .run({ name: input.name, color: input.color ?? null });
-  const row = db.prepare("SELECT * FROM themes WHERE id = ?").get(result.lastInsertRowid) as ThemeRow;
-  return toTheme(row);
+export async function createTheme(input: ThemeInput): Promise<Theme> {
+  const { data, error } = await supabase
+    .from("themes")
+    .insert({ name: input.name, color: input.color ?? null })
+    .select()
+    .single();
+  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  return toTheme(data as ThemeRow);
 }
 
-export function listStockThemeIds(stockId: number): number[] {
-  const rows = db
-    .prepare("SELECT theme_id FROM stock_themes WHERE stock_id = ?")
-    .all(stockId) as { theme_id: number }[];
-  return rows.map((r) => r.theme_id);
+export async function listStockThemeIds(stockId: number): Promise<number[]> {
+  const { data, error } = await supabase.from("stock_themes").select("theme_id").eq("stock_id", stockId);
+  if (error) throw new HttpError(500, error.message);
+  return (data as { theme_id: number }[]).map((r) => r.theme_id);
 }
 
-export function addStockTheme(stockId: number, themeId: number): void {
-  db.prepare(
-    "INSERT OR IGNORE INTO stock_themes (stock_id, theme_id) VALUES (?, ?)",
-  ).run(stockId, themeId);
+export async function addStockTheme(stockId: number, themeId: number): Promise<void> {
+  const { error } = await supabase
+    .from("stock_themes")
+    .upsert({ stock_id: stockId, theme_id: themeId }, { onConflict: "stock_id,theme_id" });
+  if (error) throw new HttpError(500, error.message);
 }
 
-export function removeStockTheme(stockId: number, themeId: number): void {
-  db.prepare("DELETE FROM stock_themes WHERE stock_id = ? AND theme_id = ?").run(stockId, themeId);
+export async function removeStockTheme(stockId: number, themeId: number): Promise<void> {
+  const { error } = await supabase.from("stock_themes").delete().eq("stock_id", stockId).eq("theme_id", themeId);
+  if (error) throw new HttpError(500, error.message);
 }

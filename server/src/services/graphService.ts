@@ -1,4 +1,5 @@
-import { db } from "../db/connection.js";
+import { supabase } from "../db/supabaseClient.js";
+import { fetchAllRows } from "../db/paginate.js";
 import type { GraphEdge, GraphNode, GraphPayload } from "@valuechain/shared";
 import { listRelationTypes } from "./relationService.js";
 import { listThemes } from "./themeService.js";
@@ -22,26 +23,37 @@ interface RelationRow {
   target_stock_id: number;
   relation_type_id: number;
   product_id: number | null;
-  product_name: string | null;
   revenue_dependency_pct: number | null;
   weight: number;
+  products: { name: string } | null;
 }
 
-export function buildGraphPayload(): GraphPayload {
-  ensureLayoutForAllNodes();
+export async function buildGraphPayload(): Promise<GraphPayload> {
+  await ensureLayoutForAllNodes();
 
-  const stockRows = db
-    .prepare("SELECT id, ticker, name, sector, market, market_cap, pos_x, pos_y FROM stocks")
-    .all() as StockRow[];
-
-  const relationRows = db
-    .prepare(
-      `SELECT r.id, r.source_stock_id, r.target_stock_id, r.relation_type_id,
-              r.product_id, p.name as product_name, r.revenue_dependency_pct, r.weight
-       FROM relations r
-       LEFT JOIN products p ON p.id = r.product_id`,
-    )
-    .all() as RelationRow[];
+  const [stockRows, relationRows, themeRows, bizRows, relationTypes, themes, newsMap] = await Promise.all([
+    fetchAllRows<StockRow>((from, to) =>
+      supabase
+        .from("stocks")
+        .select("id, ticker, name, sector, market, market_cap, pos_x, pos_y")
+        .range(from, to),
+    ),
+    fetchAllRows<RelationRow>((from, to) =>
+      supabase
+        .from("relations")
+        .select("id, source_stock_id, target_stock_id, relation_type_id, product_id, revenue_dependency_pct, weight, products(name)")
+        .range(from, to) as unknown as PromiseLike<{ data: RelationRow[] | null; error: { message: string } | null }>,
+    ),
+    fetchAllRows<{ stock_id: number; theme_id: number }>((from, to) =>
+      supabase.from("stock_themes").select("stock_id, theme_id").range(from, to),
+    ),
+    fetchAllRows<{ stock_id: number; business_type: "B2G" | "B2B" | "B2C" }>((from, to) =>
+      supabase.from("stock_products").select("stock_id, business_type").range(from, to),
+    ),
+    listRelationTypes(),
+    listThemes(),
+    latestNewsCategoryByStock(),
+  ]);
 
   const degree = new Map<number, number>();
   for (const r of relationRows) {
@@ -49,10 +61,6 @@ export function buildGraphPayload(): GraphPayload {
     degree.set(r.target_stock_id, (degree.get(r.target_stock_id) ?? 0) + 1);
   }
 
-  const themeRows = db.prepare("SELECT stock_id, theme_id FROM stock_themes").all() as {
-    stock_id: number;
-    theme_id: number;
-  }[];
   const themesByStock = new Map<number, number[]>();
   for (const row of themeRows) {
     const arr = themesByStock.get(row.stock_id) ?? [];
@@ -60,17 +68,12 @@ export function buildGraphPayload(): GraphPayload {
     themesByStock.set(row.stock_id, arr);
   }
 
-  const businessTypeRows = db
-    .prepare("SELECT DISTINCT stock_id, business_type FROM stock_products")
-    .all() as { stock_id: number; business_type: "B2G" | "B2B" | "B2C" }[];
   const businessTypesByStock = new Map<number, Array<"B2G" | "B2B" | "B2C">>();
-  for (const row of businessTypeRows) {
+  for (const row of bizRows) {
     const arr = businessTypesByStock.get(row.stock_id) ?? [];
-    arr.push(row.business_type);
+    if (!arr.includes(row.business_type)) arr.push(row.business_type);
     businessTypesByStock.set(row.stock_id, arr);
   }
-
-  const newsMap = latestNewsCategoryByStock();
 
   const nodes: GraphNode[] = stockRows.map((row) => ({
     id: row.id,
@@ -93,15 +96,10 @@ export function buildGraphPayload(): GraphPayload {
     target: row.target_stock_id,
     relationTypeId: row.relation_type_id,
     productId: row.product_id,
-    productName: row.product_name,
+    productName: row.products?.name ?? null,
     revenueDependencyPct: row.revenue_dependency_pct,
     weight: row.weight,
   }));
 
-  return {
-    nodes,
-    edges,
-    relationTypes: listRelationTypes(),
-    themes: listThemes(),
-  };
+  return { nodes, edges, relationTypes, themes };
 }
