@@ -1,6 +1,6 @@
 import { supabase } from "../db/supabaseClient.js";
 import type { Relation, RelationInput, RelationTypeDef } from "@valuechain/shared";
-import { HttpError } from "../middleware/errorHandler.js";
+import { HttpError, pgErrorStatus } from "../middleware/errorHandler.js";
 
 interface RelationRow {
   id: number;
@@ -67,7 +67,7 @@ export async function createRelation(input: RelationInput): Promise<Relation> {
     })
     .select()
     .single();
-  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  if (error) throw new HttpError(pgErrorStatus(error.code), error.message);
   return toRelation(data as RelationRow);
 }
 
@@ -123,6 +123,6 @@ export async function createRelationType(input: { code: string; labelKo: string;
     .insert({ code: input.code, label_ko: input.labelKo, color: input.color, directionality: input.directionality })
     .select()
     .single();
-  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  if (error) throw new HttpError(pgErrorStatus(error.code), error.message);
   return toRelationType(data as RelationTypeRow);
 }

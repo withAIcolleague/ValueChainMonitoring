@@ -1,6 +1,6 @@
 import { supabase } from "../db/supabaseClient.js";
 import type { Stock, StockInput } from "@valuechain/shared";
-import { HttpError } from "../middleware/errorHandler.js";
+import { HttpError, pgErrorStatus } from "../middleware/errorHandler.js";
 
 interface StockRow {
   id: number;
@@ -86,7 +86,7 @@ export async function createStock(input: StockInput): Promise<Stock> {
     })
     .select()
     .single();
-  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  if (error) throw new HttpError(pgErrorStatus(error.code), error.message);
   return toStock(data as StockRow);
 }
 

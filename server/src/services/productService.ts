@@ -1,6 +1,6 @@
 import { supabase } from "../db/supabaseClient.js";
 import type { Product, ProductInput, StockProduct, StockProductInput } from "@valuechain/shared";
-import { HttpError } from "../middleware/errorHandler.js";
+import { HttpError, pgErrorStatus } from "../middleware/errorHandler.js";
 
 interface ProductRow {
   id: number;
@@ -24,7 +24,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     .insert({ name: input.name, category: input.category ?? null })
     .select()
     .single();
-  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  if (error) throw new HttpError(pgErrorStatus(error.code), error.message);
   return toProduct(data as ProductRow);
 }
 
@@ -95,7 +95,7 @@ export async function addStockProduct(stockId: number, input: StockProductInput)
     },
     { onConflict: "stock_id,product_id,business_type" },
   );
-  if (upsertError) throw new HttpError(500, upsertError.message);
+  if (upsertError) throw new HttpError(pgErrorStatus(upsertError.code), upsertError.message);
 
   const { data, error } = await supabase
     .from("stock_products")
