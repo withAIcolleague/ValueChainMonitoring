@@ -1,6 +1,6 @@
 import { supabase } from "../db/supabaseClient.js";
 import type { Theme, ThemeInput } from "@valuechain/shared";
-import { HttpError } from "../middleware/errorHandler.js";
+import { HttpError, pgErrorStatus } from "../middleware/errorHandler.js";
 
 interface ThemeRow {
   id: number;
@@ -24,7 +24,7 @@ export async function createTheme(input: ThemeInput): Promise<Theme> {
     .insert({ name: input.name, color: input.color ?? null })
     .select()
     .single();
-  if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message);
+  if (error) throw new HttpError(pgErrorStatus(error.code), error.message);
   return toTheme(data as ThemeRow);
 }
 
@@ -38,7 +38,7 @@ export async function addStockTheme(stockId: number, themeId: number): Promise<v
   const { error } = await supabase
     .from("stock_themes")
     .upsert({ stock_id: stockId, theme_id: themeId }, { onConflict: "stock_id,theme_id" });
-  if (error) throw new HttpError(500, error.message);
+  if (error) throw new HttpError(pgErrorStatus(error.code), error.message);
 }
 
 export async function removeStockTheme(stockId: number, themeId: number): Promise<void> {
