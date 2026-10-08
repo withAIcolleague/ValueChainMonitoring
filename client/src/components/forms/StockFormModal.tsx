@@ -69,11 +69,20 @@ export function StockFormModal({ stock, existingNodes, onClose, onCreated }: Sto
         </label>
         <label>
           시장
-          <select {...register("market")}>
-            <option value="">선택</option>
-            <option value="KOSPI">KOSPI</option>
-            <option value="KOSDAQ">KOSDAQ</option>
-          </select>
+          <input {...register("market")} list="market-options" placeholder="KOSPI, NASDAQ, TSE 등 (목록에 없으면 직접 입력)" />
+          <datalist id="market-options">
+            <option value="KOSPI" />
+            <option value="KOSDAQ" />
+            <option value="KONEX" />
+            <option value="NYSE" />
+            <option value="NASDAQ" />
+            <option value="AMEX" />
+            <option value="TSE" />
+            <option value="SSE" />
+            <option value="SZSE" />
+            <option value="HKEX" />
+            <option value="LSE" />
+          </datalist>
         </label>
         <label>
           시가총액 (원)
