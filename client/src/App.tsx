@@ -26,6 +26,13 @@ function App() {
   const [modal, setModal] = useState<ModalKind>(null);
   const [showNewsFeed, setShowNewsFeed] = useState(false);
   const { data: editingStock } = useStockDetailQuery(modal === "edit-stock" ? selectedStockId : null);
+  const mainBodyRef = useRef<HTMLDivElement>(null);
+
+  function scrollMainBody(target: "top" | "bottom") {
+    const el = mainBodyRef.current;
+    if (!el) return;
+    el.scrollTo({ top: target === "top" ? 0 : el.scrollHeight, behavior: "smooth" });
+  }
 
   function handleSelectFromList(id: number) {
     graphRef.current?.selectNode(id);
@@ -64,7 +71,7 @@ function App() {
         </div>
       </header>
 
-      <div className="main-body">
+      <div className="main-body" ref={mainBodyRef}>
         <aside className="sidebar">
           <SearchBar />
           <FilterPanel nodes={payload.nodes} themes={payload.themes} />
@@ -92,6 +99,15 @@ function App() {
         {showNewsFeed && (
           <NewsFeedPanel payload={payload} onClose={() => setShowNewsFeed(false)} onFocusStock={handleFocusStock} />
         )}
+      </div>
+
+      <div className="mobile-scroll-fab">
+        <button type="button" aria-label="맨 위로 이동" onClick={() => scrollMainBody("top")}>
+          ▲
+        </button>
+        <button type="button" aria-label="맨 아래로 이동" onClick={() => scrollMainBody("bottom")}>
+          ▼
+        </button>
       </div>
 
       {modal === "add-stock" && (
