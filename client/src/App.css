@@ -375,6 +375,22 @@ h4 {
   resize: vertical;
 }
 
+.relation-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.relation-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg);
+}
+
 .checkbox-row {
   display: flex;
   gap: 12px;
