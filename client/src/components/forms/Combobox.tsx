@@ -35,6 +35,14 @@ export function Combobox({ id, options, value, onInputChange, onSelect, placehol
     ? options.filter((o) => o.label.toLowerCase().includes(value.trim().toLowerCase())).slice(0, 8)
     : options.slice(0, 8);
 
+  function resolveMatch(): ComboboxOption | undefined {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return undefined;
+    return (
+      filtered.find((o) => o.label.trim().toLowerCase() === normalized) ?? filtered[0]
+    );
+  }
+
   return (
     <div className="combobox" ref={containerRef}>
       <input
@@ -46,6 +54,24 @@ export function Combobox({ id, options, value, onInputChange, onSelect, placehol
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            const match = resolveMatch();
+            if (match) {
+              e.preventDefault();
+              onSelect(match);
+              setOpen(false);
+            }
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        onBlur={() => {
+          const normalized = value.trim().toLowerCase();
+          const exact = normalized ? options.find((o) => o.label.trim().toLowerCase() === normalized) : undefined;
+          if (exact) onSelect(exact);
+          setOpen(false);
+        }}
       />
       {open && filtered.length > 0 && (
         <ul className="combobox-list">
