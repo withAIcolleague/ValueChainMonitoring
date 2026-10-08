@@ -16,10 +16,12 @@ export function StockList({ nodes, onSelect }: StockListProps) {
   const themeFilter = useGraphStore((s) => s.themeFilter);
   const businessTypeFilter = useGraphStore((s) => s.businessTypeFilter);
   const selectedStockId = useGraphStore((s) => s.selectedStockId);
+  const highlightedNodeIds = useGraphStore((s) => s.highlightedNodeIds);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return nodes.filter((n) => {
+      if (highlightedNodeIds.size > 0 && !highlightedNodeIds.has(n.id)) return false;
       if (q && !n.name.toLowerCase().includes(q) && !n.ticker.toLowerCase().includes(q)) return false;
       if (sectorFilter && n.sector !== sectorFilter) return false;
       if (marketFilter && n.market !== marketFilter) return false;
@@ -27,7 +29,7 @@ export function StockList({ nodes, onSelect }: StockListProps) {
       if (businessTypeFilter && !n.businessTypes.includes(businessTypeFilter)) return false;
       return true;
     });
-  }, [nodes, searchQuery, sectorFilter, marketFilter, themeFilter, businessTypeFilter]);
+  }, [nodes, searchQuery, sectorFilter, marketFilter, themeFilter, businessTypeFilter, highlightedNodeIds]);
 
   const virtualizer = useVirtualizer({
     count: filtered.length,
