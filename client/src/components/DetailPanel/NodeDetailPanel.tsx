@@ -1,5 +1,7 @@
 import type { GraphPayload } from "@valuechain/shared";
+import { deleteStock } from "../../api/stocks";
 import {
+  useInvalidateGraph,
   useStockDetailQuery,
   useStockLinksQuery,
   useStockNewsQuery,
@@ -40,6 +42,15 @@ export function NodeDetailPanel({
   const { data: relations = [] } = useStockRelationsQuery(stockId);
   const { data: news = [] } = useStockNewsQuery(stockId);
   const { data: links = [] } = useStockLinksQuery(stockId);
+  const invalidateGraph = useInvalidateGraph();
+
+  async function handleDeleteStock() {
+    if (!stock) return;
+    if (!window.confirm(`${stock.name}(${stock.ticker}) 종목을 삭제할까요? 연결된 공급망 관계·품목·뉴스도 함께 삭제됩니다.`)) return;
+    await deleteStock(stockId);
+    invalidateGraph();
+    onClose();
+  }
 
   const nodeById = new Map(payload.nodes.map((n) => [n.id, n]));
   const relationTypeById = new Map(payload.relationTypes.map((rt) => [rt.id, rt]));
@@ -61,7 +72,10 @@ export function NodeDetailPanel({
         <section>
           <div className="section-header">
             <h3>개요</h3>
-            <button className="link-button" onClick={onEditStock}>수정</button>
+            <div className="section-header-actions">
+              <button className="link-button" onClick={onEditStock}>수정</button>
+              <button className="link-button link-button-danger" onClick={handleDeleteStock}>삭제</button>
+            </div>
           </div>
           <p>{stock.sector} · {stock.market} {stock.marketCap ? `· 시가총액 ${(stock.marketCap / 1e8).toFixed(0)}억` : ""}</p>
           {stock.businessSummary && <p>{stock.businessSummary}</p>}

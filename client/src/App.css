@@ -187,6 +187,15 @@ h4 {
   font-size: 12px;
 }
 
+.link-button-danger {
+  color: #dc2626;
+}
+
+.section-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .secondary-button {
   background: var(--panel-bg);
   border: 1px solid var(--border);
