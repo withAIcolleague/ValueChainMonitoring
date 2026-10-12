@@ -564,6 +564,13 @@ h4 {
     padding-right: 64px;
   }
 
+  /* When the sidebar and graph are both collapsed, let the detail/news panel use the
+     freed-up space instead of staying capped at 50vh. */
+  .mobile-expanded .detail-panel,
+  .mobile-expanded .news-feed-panel {
+    max-height: 80vh;
+  }
+
   .mobile-scroll-fab {
     display: flex;
   }

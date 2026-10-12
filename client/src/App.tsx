@@ -88,7 +88,12 @@ function App() {
         </main>
 
         {selectedStockId !== null && (
-          <div className={openSections.detail ? undefined : "mobile-collapsed"}>
+          <div
+            className={[
+              openSections.detail ? "" : "mobile-collapsed",
+              !openSections.sidebar && !openSections.graph ? "mobile-expanded" : "",
+            ].filter(Boolean).join(" ") || undefined}
+          >
             <NodeDetailPanel
               stockId={selectedStockId}
               payload={payload}
@@ -104,7 +109,12 @@ function App() {
         )}
 
         {showNewsFeed && (
-          <div className={openSections.detail ? undefined : "mobile-collapsed"}>
+          <div
+            className={[
+              openSections.detail ? "" : "mobile-collapsed",
+              !openSections.sidebar && !openSections.graph ? "mobile-expanded" : "",
+            ].filter(Boolean).join(" ") || undefined}
+          >
             <NewsFeedPanel payload={payload} onClose={() => setShowNewsFeed(false)} onFocusStock={handleFocusStock} />
           </div>
         )}
