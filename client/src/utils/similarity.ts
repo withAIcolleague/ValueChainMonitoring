@@ -11,7 +11,7 @@ export function normalizeCompanyName(raw: string): string {
   return s;
 }
 
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
@@ -29,6 +29,29 @@ function levenshtein(a: string, b: string): number {
     for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
   }
   return prev[b.length];
+}
+
+/**
+ * Typo-tolerant substring match for live search-as-you-type: exact substring match first
+ * (cheap, precise), then falls back to checking whether any similarly-sized window of
+ * `haystack` is within a small edit distance of `needle`, so a misspelled query (e.g.
+ * "삼송전자" for "삼성전자") still finds the intended result.
+ */
+export function fuzzyIncludes(haystack: string, needle: string): boolean {
+  const h = haystack.toLowerCase();
+  const n = needle.trim().toLowerCase();
+  if (!n) return true;
+  if (h.includes(n)) return true;
+  if (n.length < 2) return false;
+
+  const maxDistance = n.length <= 3 ? 1 : Math.floor(n.length * 0.3);
+  const windowLens = new Set([n.length - 1, n.length, n.length + 1].filter((len) => len > 0));
+  for (const len of windowLens) {
+    for (let i = 0; i + len <= h.length; i++) {
+      if (levenshtein(h.slice(i, i + len), n) <= maxDistance) return true;
+    }
+  }
+  return false;
 }
 
 export interface SimilarStockMatch {

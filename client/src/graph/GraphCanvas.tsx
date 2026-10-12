@@ -6,6 +6,7 @@ import type { GraphPayload, RelationTypeDef } from "@valuechain/shared";
 import { useGraphStore } from "./graphStore";
 import { runForceAtlas2InWorker } from "./layoutWorker";
 import { saveLayoutPositions } from "../api/graph";
+import { fuzzyIncludes } from "../utils/similarity";
 import {
   DEFAULT_NODE_COLOR,
   DOWNSTREAM_COLOR,
@@ -42,8 +43,8 @@ interface FilterState {
 function nodeMatchesFilters(raw: GraphPayload["nodes"][number], state: FilterState): boolean {
   const matchesSearch =
     !state.searchQuery ||
-    raw.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
-    raw.ticker.toLowerCase().includes(state.searchQuery.toLowerCase());
+    fuzzyIncludes(raw.name, state.searchQuery) ||
+    fuzzyIncludes(raw.ticker, state.searchQuery);
   const matchesSector = !state.sectorFilter || raw.sector === state.sectorFilter;
   const matchesMarket = !state.marketFilter || raw.market === state.marketFilter;
   const matchesTheme = !state.themeFilter || raw.themeIds.includes(state.themeFilter);

@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GraphNode } from "@valuechain/shared";
 import { useGraphStore } from "../../graph/graphStore";
+import { fuzzyIncludes } from "../../utils/similarity";
 
 interface StockListProps {
   nodes: GraphNode[];
@@ -22,7 +23,7 @@ export function StockList({ nodes, onSelect }: StockListProps) {
     const q = searchQuery.trim().toLowerCase();
     return nodes.filter((n) => {
       if (highlightedNodeIds.size > 0 && !highlightedNodeIds.has(n.id)) return false;
-      if (q && !n.name.toLowerCase().includes(q) && !n.ticker.toLowerCase().includes(q)) return false;
+      if (q && !fuzzyIncludes(n.name, q) && !fuzzyIncludes(n.ticker, q)) return false;
       if (sectorFilter && n.sector !== sectorFilter) return false;
       if (marketFilter && n.market !== marketFilter) return false;
       if (themeFilter && !n.themeIds.includes(themeFilter)) return false;
