@@ -104,6 +104,39 @@ function computeEgoNetwork(graph: Graph, nodeKey: string, depth: number) {
   return { highlighted, directions };
 }
 
+/** Frames the camera around a set of nodes (the selected node + its ego network) instead of
+ * zooming tightly on just the clicked node, so connected nodes further away in the
+ * force-directed layout stay on screen and their edges remain visible.
+ *
+ * Positions come from sigma's getNodeDisplayData (the normalized/framed coordinates the
+ * camera and graphToViewport operate in), not the raw graph node attributes — those are in
+ * unframed graph space and would point the camera far outside the visible area. */
+function fitCameraToNodes(sigma: Sigma, nodeIds: Iterable<string>, padding = 0.2) {
+  const ids = Array.from(nodeIds);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const id of ids) {
+    const data = sigma.getNodeDisplayData(id);
+    if (!data) continue;
+    minX = Math.min(minX, data.x);
+    maxX = Math.max(maxX, data.x);
+    minY = Math.min(minY, data.y);
+    maxY = Math.max(maxY, data.y);
+  }
+  if (!isFinite(minX)) return;
+
+  const camera = sigma.getCamera();
+  const spread = Math.max(maxX - minX, maxY - minY);
+
+  // Sigma's framed node coordinates span roughly [0, 1] across the whole graph at ratio 1,
+  // so the ratio needed to frame a sub-area is just its extent relative to that, padded out.
+  const ratio = spread > 0 ? Math.max(spread / (1 - padding), 0.05) : 0.15;
+
+  camera.animate({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, ratio }, { duration: 400 });
+}
+
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ payload }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
@@ -132,10 +165,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ pa
       const { highlighted, directions } = computeEgoNetwork(graph, String(id), depth);
       useGraphStore.getState().setSelectedStock(id);
       useGraphStore.getState().setHighlight(highlighted, directions);
-      const pos = sigma.getNodeDisplayData(String(id));
-      if (pos) {
-        sigma.getCamera().animate({ x: pos.x, y: pos.y, ratio: 0.15 }, { duration: 400 });
-      }
+      fitCameraToNodes(sigma, [String(id), ...[...highlighted].map(String)]);
       sigma.refresh();
     },
   }));
@@ -239,15 +269,20 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ pa
         const sourceSelected = state.selectedStockId === source;
         const targetSelected = state.selectedStockId === target;
         const bothHighlighted = state.highlightedNodeIds.has(source) && state.highlightedNodeIds.has(target);
-        if ((sourceSelected || targetSelected) && bothHighlighted) {
+        if (!bothHighlighted) {
+          res.color = FADED_COLOR;
+          res.hidden = true;
+        } else if (sourceSelected || targetSelected) {
           res.color = state.highlightDirectionByNode.get(sourceSelected ? target : source) === "upstream"
             ? UPSTREAM_COLOR
             : DOWNSTREAM_COLOR;
           res.hidden = false;
           res.size = 2.5;
         } else {
-          res.color = FADED_COLOR;
-          res.hidden = true;
+          // Connects two other nodes within the selected node's ego network (part of the
+          // broader supply-chain stream, not a direct relation of the selected node itself).
+          res.hidden = false;
+          res.size = 1.5;
         }
       } else if (isAnyFilterActive(state)) {
         const sourceRaw = graph.getNodeAttribute(String(source), "raw") as GraphPayload["nodes"][number];
@@ -266,6 +301,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ pa
 
       useGraphStore.getState().setSelectedStock(id);
       useGraphStore.getState().setHighlight(highlighted, directions);
+      fitCameraToNodes(sigma, [node, ...[...highlighted].map(String)]);
       sigma.refresh();
     });
 
