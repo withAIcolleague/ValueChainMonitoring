@@ -560,6 +560,7 @@ h4 {
     max-height: 50vh;
     border-left: none;
     border-top: 1px solid var(--border);
+    padding-right: 64px;
   }
 
   .mobile-scroll-fab {
