@@ -27,11 +27,16 @@ function App() {
   const [showNewsFeed, setShowNewsFeed] = useState(false);
   const { data: editingStock } = useStockDetailQuery(modal === "edit-stock" ? selectedStockId : null);
   const mainBodyRef = useRef<HTMLDivElement>(null);
+  const [openSections, setOpenSections] = useState({ sidebar: true, graph: true, detail: true });
 
   function scrollMainBody(target: "top" | "bottom") {
     const el = mainBodyRef.current;
     if (!el) return;
     el.scrollTo({ top: target === "top" ? 0 : el.scrollHeight, behavior: "smooth" });
+  }
+
+  function toggleSection(key: keyof typeof openSections) {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   function handleSelectFromList(id: number) {
@@ -72,36 +77,64 @@ function App() {
       </header>
 
       <div className="main-body" ref={mainBodyRef}>
-        <aside className="sidebar">
+        <aside className={`sidebar${openSections.sidebar ? "" : " mobile-collapsed"}`}>
           <SearchBar />
           <FilterPanel nodes={payload.nodes} themes={payload.themes} />
           <StockList nodes={payload.nodes} onSelect={handleSelectFromList} />
         </aside>
 
-        <main className="graph-area">
+        <main className={`graph-area${openSections.graph ? "" : " mobile-collapsed"}`}>
           <GraphCanvas ref={graphRef} payload={payload} />
         </main>
 
         {selectedStockId !== null && (
-          <NodeDetailPanel
-            stockId={selectedStockId}
-            payload={payload}
-            onClose={closeDetail}
-            onEditStock={() => setModal("edit-stock")}
-            onAddRelation={() => setModal("add-relation")}
-            onAddProduct={() => setModal("add-product")}
-            onAddTheme={() => setModal("add-theme")}
-            onAddNews={() => setModal("add-news")}
-            onFocusStock={handleFocusStock}
-          />
+          <div className={openSections.detail ? undefined : "mobile-collapsed"}>
+            <NodeDetailPanel
+              stockId={selectedStockId}
+              payload={payload}
+              onClose={closeDetail}
+              onEditStock={() => setModal("edit-stock")}
+              onAddRelation={() => setModal("add-relation")}
+              onAddProduct={() => setModal("add-product")}
+              onAddTheme={() => setModal("add-theme")}
+              onAddNews={() => setModal("add-news")}
+              onFocusStock={handleFocusStock}
+            />
+          </div>
         )}
 
         {showNewsFeed && (
-          <NewsFeedPanel payload={payload} onClose={() => setShowNewsFeed(false)} onFocusStock={handleFocusStock} />
+          <div className={openSections.detail ? undefined : "mobile-collapsed"}>
+            <NewsFeedPanel payload={payload} onClose={() => setShowNewsFeed(false)} onFocusStock={handleFocusStock} />
+          </div>
         )}
       </div>
 
       <div className="mobile-scroll-fab">
+        <button
+          type="button"
+          aria-label="검색 영역 펼치기/접기"
+          className={`mobile-fab-toggle${openSections.sidebar ? " mobile-fab-active" : ""}`}
+          onClick={() => toggleSection("sidebar")}
+        >
+          🔍
+        </button>
+        <button
+          type="button"
+          aria-label="그래프 영역 펼치기/접기"
+          className={`mobile-fab-toggle${openSections.graph ? " mobile-fab-active" : ""}`}
+          onClick={() => toggleSection("graph")}
+        >
+          🕸
+        </button>
+        <button
+          type="button"
+          aria-label="기업정보 영역 펼치기/접기"
+          className={`mobile-fab-toggle${openSections.detail ? " mobile-fab-active" : ""}`}
+          onClick={() => toggleSection("detail")}
+        >
+          📋
+        </button>
         <button type="button" aria-label="맨 위로 이동" onClick={() => scrollMainBody("top")}>
           ▲
         </button>
