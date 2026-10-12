@@ -312,6 +312,14 @@ h4 {
   align-items: center;
   gap: 8px;
   padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.news-feed-controls select,
+.news-feed-controls input[type="date"] {
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .news-progress {

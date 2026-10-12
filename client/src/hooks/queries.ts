@@ -48,10 +48,10 @@ export function useStockNewsQuery(stockId: number | null) {
   });
 }
 
-export function useAllNewsQuery(category?: string) {
+export function useAllNewsQuery(params: { category?: string; from?: string; to?: string } = {}) {
   return useQuery({
-    queryKey: ["allNews", category],
-    queryFn: () => fetchNews(category ? { category: category as any } : {}),
+    queryKey: ["allNews", params.category, params.from, params.to],
+    queryFn: () => fetchNews({ category: params.category as any, from: params.from, to: params.to }),
   });
 }
 

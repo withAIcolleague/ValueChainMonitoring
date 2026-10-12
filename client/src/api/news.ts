@@ -1,10 +1,12 @@
 import type { News, NewsCategory, NewsInput } from "@valuechain/shared";
 import { api } from "./client";
 
-export function fetchNews(params: { stockId?: number; category?: NewsCategory } = {}) {
+export function fetchNews(params: { stockId?: number; category?: NewsCategory; from?: string; to?: string } = {}) {
   const qs = new URLSearchParams();
   if (params.stockId) qs.set("stockId", String(params.stockId));
   if (params.category) qs.set("category", params.category);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api.get<News[]>(`/news${suffix}`);
 }

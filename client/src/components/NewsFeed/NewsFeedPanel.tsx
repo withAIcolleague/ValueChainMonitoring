@@ -27,7 +27,13 @@ function sleep(ms: number) {
 
 export function NewsFeedPanel({ payload, onClose, onFocusStock }: NewsFeedPanelProps) {
   const [category, setCategory] = useState<NewsCategory | "">("");
-  const { data: news = [], isFetching } = useAllNewsQuery(category || undefined);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const { data: news = [], isFetching } = useAllNewsQuery({
+    category: category || undefined,
+    from: fromDate || undefined,
+    to: toDate || undefined,
+  });
   const qc = useQueryClient();
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const cancelRef = useRef(false);
@@ -77,6 +83,33 @@ export function NewsFeedPanel({ payload, onClose, onFocusStock }: NewsFeedPanelP
             <option key={key} value={key}>{label}</option>
           ))}
         </select>
+        <input
+          type="date"
+          value={fromDate}
+          max={toDate || undefined}
+          onChange={(e) => setFromDate(e.target.value)}
+          aria-label="검색 시작일"
+        />
+        <span>~</span>
+        <input
+          type="date"
+          value={toDate}
+          min={fromDate || undefined}
+          onChange={(e) => setToDate(e.target.value)}
+          aria-label="검색 종료일"
+        />
+        {(fromDate || toDate) && (
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setFromDate("");
+              setToDate("");
+            }}
+          >
+            기간 초기화
+          </button>
+        )}
         {progress ? (
           <>
             <span className="news-progress">{progress.done}/{progress.total} 처리 중...</span>
