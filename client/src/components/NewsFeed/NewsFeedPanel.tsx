@@ -15,6 +15,23 @@ const CATEGORY_LABEL: Record<NewsCategory, string> = {
 const BATCH_DELAY_MS = 500;
 const REFRESH_EVERY = 10;
 
+const PERIOD_PRESETS: { label: string; months?: number; days?: number }[] = [
+  { label: "1주일", days: 7 },
+  { label: "1달", months: 1 },
+  { label: "1분기", months: 3 },
+  { label: "반년", months: 6 },
+  { label: "1년", months: 12 },
+  { label: "3년", months: 36 },
+  { label: "전체" },
+];
+
+function todayMinus(preset: { months?: number; days?: number }): string {
+  const d = new Date();
+  if (preset.days) d.setDate(d.getDate() - preset.days);
+  if (preset.months) d.setMonth(d.getMonth() - preset.months);
+  return d.toISOString().slice(0, 10);
+}
+
 interface NewsFeedPanelProps {
   payload: GraphPayload;
   onClose: () => void;
@@ -70,6 +87,13 @@ export function NewsFeedPanel({ payload, onClose, onFocusStock }: NewsFeedPanelP
     cancelRef.current = true;
   }
 
+  function applyPeriodPreset(label: string) {
+    const preset = PERIOD_PRESETS.find((p) => p.label === label);
+    if (!preset) return;
+    setFromDate(preset.months || preset.days ? todayMinus(preset) : "");
+    setToDate("");
+  }
+
   return (
     <aside className="news-feed-panel">
       <div className="detail-panel-header">
@@ -81,6 +105,18 @@ export function NewsFeedPanel({ payload, onClose, onFocusStock }: NewsFeedPanelP
           <option value="">전체 카테고리</option>
           {Object.entries(CATEGORY_LABEL).map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
+        <select
+          value=""
+          onChange={(e) => {
+            if (e.target.value) applyPeriodPreset(e.target.value);
+          }}
+          aria-label="기간 빠른 선택"
+        >
+          <option value="" disabled>기간 선택</option>
+          {PERIOD_PRESETS.map((p) => (
+            <option key={p.label} value={p.label}>{p.label}</option>
           ))}
         </select>
         <input
