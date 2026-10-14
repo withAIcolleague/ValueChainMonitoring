@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { StockInputSchema, type GraphNode, type Stock, type StockInput } from "@valuechain/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { createStock, updateStock } from "../../api/stocks";
+import { ApiError } from "../../api/client";
 import { useInvalidateGraph } from "../../hooks/queries";
 import { Modal } from "./Modal";
 import { findSimilarStocks } from "../../utils/similarity";
@@ -29,13 +31,23 @@ export function StockFormModal({ stock, existingNodes, onClose, onCreated }: Sto
 
   const nameValue = watch("name");
   const similarStocks = findSimilarStocks(nameValue ?? "", existingNodes, stock?.id);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function onSubmit(data: StockInput) {
-    const result = stock ? await updateStock(stock.id, data) : await createStock(data);
-    invalidateGraph();
-    if (stock) qc.invalidateQueries({ queryKey: ["stock", stock.id] });
-    onCreated?.(result);
-    onClose();
+    setSubmitError(null);
+    try {
+      const result = stock ? await updateStock(stock.id, data) : await createStock(data);
+      invalidateGraph();
+      if (stock) qc.invalidateQueries({ queryKey: ["stock", stock.id] });
+      onCreated?.(result);
+      onClose();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setSubmitError(`이미 등록된 티커입니다: ${data.ticker}`);
+      } else {
+        setSubmitError(err instanceof Error ? err.message : String(err));
+      }
+    }
   }
 
   return (
@@ -96,6 +108,7 @@ export function StockFormModal({ stock, existingNodes, onClose, onCreated }: Sto
           투자 리스크 메모
           <textarea {...register("riskNotes")} />
         </label>
+        {submitError && <span className="form-error">{submitError}</span>}
         <button type="submit" disabled={isSubmitting} className="primary-button">
           {stock ? "수정 저장" : "추가"}
         </button>
