@@ -14,13 +14,26 @@ export function SearchBar() {
     };
   }, [value, setSearchQuery]);
 
+  function handleClear() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setValue("");
+    setSearchQuery("");
+  }
+
   return (
-    <input
-      type="text"
-      placeholder="종목명 또는 티커 검색"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      className="search-input"
-    />
+    <div className="search-input-wrapper">
+      <input
+        type="text"
+        placeholder="종목명 또는 티커 검색"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="search-input"
+      />
+      {value && (
+        <button type="button" className="search-clear-button" onClick={handleClear} aria-label="검색어 지우기">
+          ×
+        </button>
+      )}
+    </div>
   );
 }
